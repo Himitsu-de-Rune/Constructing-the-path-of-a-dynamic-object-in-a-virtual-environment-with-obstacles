@@ -1,4 +1,5 @@
 import numpy as np
+import random
 import heapq
 import time
 
@@ -8,7 +9,7 @@ class Grid:
         self.height = height
         self.grid = np.zeros((width, height))
         for obstacle in obstacles:
-            self.grid[obstacle[0], obstacle[1]] = 1  # 1 означает препятствие
+            self.grid[obstacle[0], obstacle[1]] = 1
 
     def is_obstacle(self, x, y):
         return self.grid[x, y] == 1
@@ -136,32 +137,77 @@ def wavefront(grid, start, goal):
 
     return path
 
-# Создание сетки 10x10 с препятствиями
-obstacles = [(4, 0), (4, 1), (3, 1), (0, 4), (1, 4), (2, 4), (3, 4), (4, 4), (4, 5), (3, 6), (5, 8), (6, 7), (6, 6), (7, 6), (8, 6), (8, 7), (8, 8)]
+def potential_field(grid, start, goal, alpha=1.0, beta=5.0, gamma=0.1, max_iter=500):
+
+    def attractive_potential(x, y):
+        return alpha * ((x - goal[0]) ** 2 + (y - goal[1]) ** 2)
+    
+    def repulsive_potential(x, y):
+        min_dist = float('inf')
+        for i in range(grid.width):
+            for j in range(grid.height):
+                if grid.is_obstacle(i, j):
+                    dist = np.sqrt((x - i) ** 2 + (y - j) ** 2)
+                    if dist < min_dist:
+                        min_dist = dist
+        if min_dist == 0:
+            return float('inf')
+        return beta / min_dist
+    
+    visited = set()
+    current = start
+    path = [current]
+    visited.add(current)
+
+    for _ in range(max_iter):
+        if current == goal:
+            break
+
+        potentials = []
+        for neighbor in grid.neighbors(*current):
+            x, y = neighbor
+            potential = (attractive_potential(x, y) + 
+                         repulsive_potential(x, y) +
+                         gamma * heuristic(neighbor, goal))
+            potentials.append((potential, neighbor))
+        
+        _, next_step = min(potentials, key=lambda x: x[0])
+        
+        if next_step in visited:
+            potentials.remove((_, next_step))
+            _, next_step = min(potentials, key=lambda x: x[0])
+
+        current = next_step
+        path.append(current)
+        visited.add(current)
+
+    return path
+
+obstacles = [(4, 0), (4, 1), (3, 1), (0, 4), (1, 4), (2, 4), (3, 4), (4, 4), (4, 5), (3, 6), (5, 8), (6, 7), (6, 6), (7, 6), (8, 7), (8, 2), (8, 3), (8, 4)]
 grid = Grid(10, 10, obstacles)
 
 start = (0, 0)
 goal = (7, 7)
 
-# Измерение времени для алгоритма Дейкстры
 start_time = time.time()
 path_dijkstra = dijkstra(grid, start, goal)
 dijkstra_time = time.time() - start_time
 
-# Измерение времени для алгоритма A*
 start_time = time.time()
 path_a_star = a_star(grid, start, goal)
 a_star_time = time.time() - start_time
 
-# Измерение времени для алгоритма D*
 start_time = time.time()
 path_d_star = d_star(grid, start, goal)
 d_star_time = time.time() - start_time
 
-# Измерение времени для волнового алгоритма
 start_time = time.time()
 path_wavefront = wavefront(grid, start, goal)
 wavefront_time = time.time() - start_time
+
+start_time = time.time()
+path_potential_field = potential_field(grid, start, goal)
+potential_field_time = time.time() - start_time
 
 print("Dijkstra Path:", path_dijkstra)
 print(f"Dijkstra Time: {round(dijkstra_time * 1000, 3)} ms")
@@ -174,3 +220,6 @@ print(f"D* Time: {round(d_star_time * 1000, 3)} ms")
 
 print("Wavefront Path:", path_wavefront)
 print(f"Wavefront Time {round(wavefront_time * 1000, 3)} ms")
+
+print("Potential Field Path:", path_potential_field)
+print(f"Potential Field Time: {round(potential_field_time * 1000, 3)} ms")
