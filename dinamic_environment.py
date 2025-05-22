@@ -2,16 +2,19 @@ import numpy as np
 import random
 import heapq
 import time
+import matplotlib.pyplot as plt
 
 class Grid:
     def __init__(self, width, height, obstacles):
         self.width = width
         self.height = height
+        self.obstacles = obstacles
         self.grid = np.zeros((width, height))
         self.update_obstacles(obstacles)
 
     def update_obstacles(self, obstacles):
         self.grid.fill(0)
+        self.obstacles = obstacles
         for obstacle in obstacles:
             self.grid[obstacle[0], obstacle[1]] = 1
 
@@ -29,20 +32,17 @@ class Grid:
             if self.in_bounds(nx, ny) and not self.is_obstacle(nx, ny):
                 result.append((nx, ny))
         return result
+    
+CLUSTERS = True
 
-def dijkstra(grid, start, goal, update_interval=0.00002):
+def dijkstra(grid, start, goal):
     queue = [(0, start)]
     distances = {start: 0}
     came_from = {start: None}
-    start_time = time.time()
     current = start
 
     while queue:
         current_distance, current = heapq.heappop(queue)
-
-        if time.time() - start_time > update_interval:
-            start_time = time.time()
-            dynamic_obstacles_update(grid, start, goal, current)
 
         if current == goal:
             break
@@ -65,20 +65,15 @@ def dijkstra(grid, start, goal, update_interval=0.00002):
 def heuristic(a, b):
     return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
-def a_star(grid, start, goal, update_interval=0.00002):
+def a_star(grid, start, goal):
     queue = [(0, start)]
     g_costs = {start: 0}
     f_costs = {start: heuristic(start, goal)}
     came_from = {start: None}
-    start_time = time.time()
     current = start
 
     while queue:
         _, current = heapq.heappop(queue)
-
-        if time.time() - start_time > update_interval:
-            start_time = time.time()
-            dynamic_obstacles_update(grid, start, goal, current)
 
         if current == goal:
             break
@@ -100,25 +95,20 @@ def a_star(grid, start, goal, update_interval=0.00002):
             current = came_from.get(current)
         path.reverse()
     else:
-        print("Цель не была достигнута")
+        #print("Цель не была достигнута")
         return []
     return path
 
-def d_star(grid, start, goal, update_interval=0.00002):
+def d_star(grid, start, goal):
     queue = [(0, start)]
     g_costs = {start: 0}
     f_costs = {start: heuristic(start, goal)}
     came_from = {start: None}
     visited = set()
-    start_time = time.time()
     current = start
 
     while queue:
         _, current = heapq.heappop(queue)
-
-        if time.time() - start_time > update_interval:
-            start_time = time.time()
-            dynamic_obstacles_update(grid, start, goal, current)
 
         if current == goal:
             break
@@ -143,18 +133,18 @@ def d_star(grid, start, goal, update_interval=0.00002):
             current = came_from.get(current)
         path.reverse()
     else:
-        print("Цель не была достигнута")
+        #print("Цель не была достигнута")
         return []
     return path
 
-def wavefront(grid, start, goal, update_interval=0.00002):
+def wavefront(grid, start, goal):
     from collections import deque
     queue = deque([goal])
     wave = {goal: 0}
-    start_time = time.time()
     current = start
 
     while queue:
+
         current = queue.popleft()
         for neighbor in grid.neighbors(*current):
 
@@ -162,30 +152,21 @@ def wavefront(grid, start, goal, update_interval=0.00002):
                 queue.append(neighbor)
                 wave[neighbor] = wave[current] + 1
 
-        if time.time() - start_time > update_interval:
-            start_time = time.time()
-            dynamic_obstacles_update(grid, start, goal, current)
-
     current = start
-    last_current = ''
     path = [current]
+    if goal not in wave or current not in wave:
+        #print("Ошибка: цель недостижима")
+        return []
 
     while (current != goal):
         neighbors = grid.neighbors(*current)
-        last_current = current
         #print(f"Current position: {current}, Neighbors: {neighbors}")
-        if neighbors != []:
-            current = min(neighbors, key=lambda x: wave.get(x, float('inf')))
-        if last_current != current:
-            path.append(current)
-
-        if time.time() - start_time > update_interval:
-            start_time = time.time()
-            dynamic_obstacles_update(grid, start, goal, current)
+        current = min(neighbors, key=lambda x: wave.get(x, float('inf')))
+        path.append(current)
 
     return path
 
-def potential_field(grid, start, goal, alpha=1.0, beta=5.0, gamma=0.1, max_iter=500, update_interval=0.00002):
+def potential_field(grid, start, goal, alpha=1.0, beta=5.0, gamma=0.1, max_iter=1000):
 
     def attractive_potential(x, y):
         return alpha * ((x - goal[0]) ** 2 + (y - goal[1]) ** 2)
@@ -202,8 +183,10 @@ def potential_field(grid, start, goal, alpha=1.0, beta=5.0, gamma=0.1, max_iter=
             return float('inf')
         return beta / min_dist
     
+    collisions = 0
     visited = set()
     current = start
+    previous_step = start
     path = [current]
     visited.add(current)
     start_time = time.time()
@@ -224,70 +207,181 @@ def potential_field(grid, start, goal, alpha=1.0, beta=5.0, gamma=0.1, max_iter=
             _, next_step = min(potentials, key=lambda x: x[0])
         
             if next_step in visited:
-                potentials.remove((_, next_step))
-                if potentials:
-                    _, next_step = min(potentials, key=lambda x: x[0])
+                next_step = random.choice(grid.neighbors(*current))
+
+        if grid.is_obstacle(*next_step):
+            collisions += 1
 
         if current != next_step:
             current = next_step
             path.append(current)
             visited.add(current)
 
-        if time.time() - start_time > update_interval:
-            start_time = time.time()
-            dynamic_obstacles_update(grid, start, goal, current)
+        if CLUSTERS:
+            dynamic_obstacles_step(grid, goal, current)
+        else:
+            dynamic_obstacles_random_step(grid, goal, current)
 
-    return path
+    return path, collisions
 
-def dynamic_obstacles_update(grid, start, goal, current):
+def generate_obstacle_clusters(grid, goal, current, cluster_size=30, spread=3):
+    num_clusters = round(grid.width * grid.height * 0.01)
     while True:
-        new_obstacles = [(np.random.randint(0, grid.width), np.random.randint(0, grid.height)) for _ in range(30)]
-        if start not in new_obstacles and goal not in new_obstacles and current not in new_obstacles:
-            grid.update_obstacles(new_obstacles)
-            #print("Dynamic obstacles updated:", new_obstacles)
+        obstacles = []
+        locates = []
+        for _ in range(num_clusters):
+            # Выбираем центр кластера и его направление
+            direction = random.randint(0, 3)
+            cx = random.randint(3, grid.width - 4)
+            cy = random.randint(3, grid.height - 4)
+            for _ in range(cluster_size):
+                # Распределяем препятствия около центра с заданным разбросом
+                dx = int(random.gauss(0, spread))
+                dy = int(random.gauss(0, spread))
+                x, y = cx + dx, cy + dy
+                if 0 <= x < grid.width and 0 <= y < grid.height:
+                    obstacles.append((x, y, direction))
+                    locates.append((x, y))
+        if goal not in locates and current not in locates:
+            grid.update_obstacles(obstacles)
             break
 
-initial_obstacles = [(4, 0), (4, 1), (3, 1), (0, 4), (1, 4), (2, 4), (3, 4), (4, 4), (4, 5), (3, 6), (5, 8), (6, 7), (6, 6), (7, 6), (8, 6), (8, 7), (8, 8)]
+def generate_obstacles_points(grid, goal, current):
+    while True:
+        locates = []
+        new_obstacles = [(np.random.randint(0, grid.width), np.random.randint(0, grid.height), np.random.randint(0, 3)) for _ in range(NUMBER_OF_OBSTACLES)]
+        for new_obstacle in new_obstacles:
+            locates.append(new_obstacle[:2])
+        if goal not in locates and current not in locates:
+            grid.update_obstacles(new_obstacles)
+            break
 
-start = (0, 0)
-goal = (7, 7)
+def dynamic_obstacles_step(grid, goal, current):
+    dir_map = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+    new_obstacles = []
+    locates = []
 
-grid = Grid(10, 10, initial_obstacles)
+    for obs in grid.obstacles:
+        x, y, d = obs
+        dx, dy = dir_map[d]
+        nx, ny = x + dx, y + dy
+        if not grid.in_bounds(nx, ny):
+            nx, ny = obstacle_return(nx, ny)
+        new_obstacles.append((nx, ny, d))
+        locates.append((nx, ny))
+
+    if goal not in locates and current not in locates:
+        grid.update_obstacles(new_obstacles)
+
+def dynamic_obstacles_random_step(grid, goal, current):
+    directions = ((0, 1, 0), (1, 0, 0), (0, -1, 0), (-1, 0, 0))
+    while True:
+        new_obstacles = []
+        locates = []
+        for obstacle in grid.obstacles:
+            is_mooving = random.randint(0, 4)
+            keep_direction = random.randint(0, 1)
+            change_direction = random.randint(0, 3)
+            if is_mooving > 0:
+                if keep_direction == 0:
+                    obstacle = (obstacle[0], obstacle[1], change_direction)
+                new_obstacle = (obstacle[0] + directions[obstacle[2]][0], 
+                                obstacle[1] + directions[obstacle[2]][1], 
+                                obstacle[2])
+                if grid.in_bounds(new_obstacle[0], new_obstacle[1]):
+                    new_obstacles.append(new_obstacle)
+                else:
+                    x, y = obstacle_return(new_obstacle[0], new_obstacle[1])
+                    new_obstacle = (x, y, obstacle[2])
+                    new_obstacles.append(new_obstacle)
+            else:
+                new_obstacles.append(obstacle)
+        for new_obstacle in new_obstacles:
+            locates.append(new_obstacle[:2])
+
+        if (goal not in locates) and (current not in locates):
+            grid.update_obstacles(new_obstacles)
+            #print("Dynamic obstacles moved:", new_obstacles)
+            break
+
+def obstacle_return(x, y):
+    nx, ny = x, y
+    if x < 0:
+        nx = x + grid.width
+    if x > grid.width - 1:
+        nx = x - grid.width
+    if y < 0:
+        ny = y + grid.height
+    if y > grid.height - 1:
+        ny = y - grid.height
+    return nx, ny
+
+WIDTH = 50
+HEIGHT = 50
+NUMBER_OF_OBSTACLES = round(WIDTH * HEIGHT * 0.3)
+
+start = (2, 2)
+goal = (WIDTH - 3, HEIGHT - 3)
+
+grid = Grid(WIDTH, HEIGHT, [])
+
+paths = {}
+timings = {}
+
+for name, func in {
+    "Dijkstra": dijkstra,
+    "A*": a_star,
+    "D*": d_star,
+    "Wavefront": wavefront,
+}.items():
+    start_time = time.time()
+    current = start
+    path = [current]
+    if CLUSTERS:
+        generate_obstacle_clusters(grid, goal, current)
+    else:
+        generate_obstacles_points(grid, goal, current)
+    while current != goal:
+        path_func = func(grid, current, goal)
+        if len(path_func) > 1:
+            next_step = path_func[1]
+            current = next_step
+            path.append(current)
+        dynamic_obstacles_random_step(grid, goal, current)
+    elapsed = round((time.time() - start_time) * 1000, 3)
+    paths[name] = path
+    timings[name] = elapsed
+    print(f"{name} Time: {elapsed} ms, Path length: {len(path)}")
+
 start_time = time.time()
-path_dijkstra = dijkstra(grid, start, goal)
-dijkstra_time = time.time() - start_time
-
-#print("Dijkstra Path:", path_dijkstra)
-print(f"Dijkstra Time: {round(dijkstra_time * 1000, 3)} ms, Dijkstra PathLength: {len(path_dijkstra)}")
-
-grid = Grid(10, 10, initial_obstacles)
-start_time = time.time()
-path_a_star = a_star(grid, start, goal)
-a_star_time = time.time() - start_time
-
-#print("A* Path:", path_a_star)
-print(f"A* Time: {round(a_star_time * 1000, 3)} ms, A* PathLength: {len(path_a_star)}")
-
-grid = Grid(10, 10, initial_obstacles)
-start_time = time.time()
-path_d_star = d_star(grid, start, goal)
-d_star_time = time.time() - start_time
-
-#print("D* Path:", path_d_star)
-print(f"D* Time: {round(d_star_time * 1000, 3)} ms, D* PathLength: {len(path_d_star)}")
-
-grid = Grid(10, 10, initial_obstacles)
-start_time = time.time()
-path_wavefront = wavefront(grid, start, goal)
-wavefront_time = time.time() - start_time
-
-#print("Wavefront Path:", path_wavefront)
-print(f"Wavefront Time {round(wavefront_time * 1000, 3)} ms, Wavefront PathLength: {len(path_wavefront)}")
-
-grid = Grid(10, 10, initial_obstacles)
-start_time = time.time()
-path_potential_field = potential_field(grid, start, goal)
+path_potential_field, collisions = potential_field(grid, start, goal)
 potential_field_time = time.time() - start_time
 
-#print("Potential Field Path:", path_potential_field)
-print(f"Potential Field Time: {round(potential_field_time * 1000, 3)} ms, Potential Field PathLength: {len(path_potential_field)}")
+print(f"Potential Field Time: {round(potential_field_time * 1000, 3)} ms, Path length: {len(path_potential_field)}")
+
+fig, ax = plt.subplots(figsize=(10, 10))
+grid_matrix = np.zeros((WIDTH, HEIGHT))
+#for x, y, _ in grid.obstacles:
+#    grid_matrix[x, y] = 1
+ax.imshow(grid_matrix.T, cmap='Greys', origin='lower')
+
+colors = {
+    "Dijkstra": 'blue',
+    "A*": 'green',
+    "D*": 'orange',
+    "Wavefront": 'purple',
+    "Potential Field": 'red'
+}
+for name, path in paths.items():
+    if path:
+        xs, ys = zip(*path)
+        ax.plot(xs, ys, label=f"{name} ({timings[name]} ms)", color=colors[name], linewidth=1)
+xs, ys = zip(*path_potential_field)
+ax.plot(xs, ys, label=f"Potential Field Time ({round(potential_field_time * 1000, 3)} ms)", color=colors["Potential Field"], linewidth=1)
+
+ax.plot(*start, 'go')
+ax.plot(*goal, 'ro')
+ax.legend()
+plt.title("Алгоритмы в динамической среде")
+plt.grid(False)
+plt.show()
