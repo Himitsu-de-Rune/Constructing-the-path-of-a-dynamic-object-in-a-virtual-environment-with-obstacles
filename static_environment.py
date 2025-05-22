@@ -2,6 +2,7 @@ import numpy as np
 import random
 import heapq
 import time
+import matplotlib.pyplot as plt
 
 class Grid:
     def __init__(self, width, height, obstacles):
@@ -59,6 +60,7 @@ def a_star(grid, start, goal):
     g_costs = {start: 0}
     f_costs = {start: heuristic(start, goal)}
     came_from = {start: None}
+    current = start
 
     while queue:
         _, current = heapq.heappop(queue)
@@ -68,19 +70,23 @@ def a_star(grid, start, goal):
 
         for neighbor in grid.neighbors(*current):
             new_g_cost = g_costs[current] + 1
+
             if neighbor not in g_costs or new_g_cost < g_costs[neighbor]:
                 g_costs[neighbor] = new_g_cost
                 f_cost = new_g_cost + heuristic(neighbor, goal)
-                f_costs[neighbor] = f_cost
                 heapq.heappush(queue, (f_cost, neighbor))
                 came_from[neighbor] = current
 
     path = []
-    current = goal
-    while current:
-        path.append(current)
-        current = came_from[current]
-    path.reverse()
+    if goal in came_from:
+        current = goal
+        while current:
+            path.append(current)
+            current = came_from.get(current)
+        path.reverse()
+    else:
+        #print("Цель не была достигнута")
+        return []
     return path
 
 def d_star(grid, start, goal):
@@ -89,9 +95,11 @@ def d_star(grid, start, goal):
     f_costs = {start: heuristic(start, goal)}
     came_from = {start: None}
     visited = set()
+    current = start
 
     while queue:
         _, current = heapq.heappop(queue)
+
         if current == goal:
             break
         visited.add(current)
@@ -100,19 +108,23 @@ def d_star(grid, start, goal):
             if neighbor in visited:
                 continue
             new_g_cost = g_costs[current] + 1
+
             if neighbor not in g_costs or new_g_cost < g_costs[neighbor]:
                 g_costs[neighbor] = new_g_cost
                 f_cost = new_g_cost + heuristic(neighbor, goal)
-                f_costs[neighbor] = f_cost
                 heapq.heappush(queue, (f_cost, neighbor))
                 came_from[neighbor] = current
 
     path = []
-    current = goal
-    while current:
-        path.append(current)
-        current = came_from[current]
-    path.reverse()
+    if goal in came_from:
+        current = goal
+        while current:
+            path.append(current)
+            current = came_from.get(current)
+        path.reverse()
+    else:
+        #print("Цель не была достигнута")
+        return []
     return path
 
 def wavefront(grid, start, goal):
@@ -174,8 +186,7 @@ def potential_field(grid, start, goal, alpha=1.0, beta=5.0, gamma=0.1, max_iter=
         _, next_step = min(potentials, key=lambda x: x[0])
         
         if next_step in visited:
-            potentials.remove((_, next_step))
-            _, next_step = min(potentials, key=lambda x: x[0])
+            next_step = random.choice(grid.neighbors(*current))
 
         current = next_step
         path.append(current)
@@ -183,43 +194,98 @@ def potential_field(grid, start, goal, alpha=1.0, beta=5.0, gamma=0.1, max_iter=
 
     return path
 
-obstacles = [(4, 0), (4, 1), (3, 1), (0, 4), (1, 4), (2, 4), (3, 4), (4, 4), (4, 5), (3, 6), (5, 8), (6, 7), (6, 6), (7, 6), (8, 7), (8, 2), (8, 3), (8, 4)]
-grid = Grid(10, 10, obstacles)
+def generate_orthogonal_maze(width, height, start, goal):
+    maze = np.ones((width, height), dtype=int)
+    # Стартовая точка и шаги по нечетным координатам
+    for x in range(1, width, 2):
+        for y in range(1, height, 2):
+            maze[x, y] = 0
+            directions = []
+            if x > 2: directions.append((-2, 0))
+            if y > 2: directions.append((0, -2))
+            if directions:
+                dx, dy = random.choice(directions)
+                maze[x + dx // 2, y + dy // 2] = 0
 
-start = (0, 0)
-goal = (7, 7)
+    obstacles = [(x, y) for x in range(width) for y in range(height) if maze[x, y] == 1 and (x, y) != start and (x, y) !=  goal]
+    return obstacles
 
-start_time = time.time()
-path_dijkstra = dijkstra(grid, start, goal)
-dijkstra_time = time.time() - start_time
+def generate_gradient_obstacles(width, height, start, goal, max_density=0.4):
+    obstacles = []
+    for x in range(width):
+        # Плотность препятствий увеличивается от 0 до max_density вдоль оси X
+        col_density = (x / width) * max_density
+        for y in range(height):
+            if random.random() < col_density:
+                if (x, y) != start and (x, y) !=  goal:
+                    obstacles.append((x, y))
+    return obstacles
 
-start_time = time.time()
-path_a_star = a_star(grid, start, goal)
-a_star_time = time.time() - start_time
+def generate_obstacle_clusters(width, height, num_clusters=30, cluster_size=30, spread=2):
+    obstacles = set()
+    for _ in range(num_clusters):
+        # Выбираем центр кластера
+        cx = random.randint(3, width - 4)
+        cy = random.randint(3, height - 4)
+        for _ in range(cluster_size):
+            # Распределяем препятствия около центра с заданным разбросом
+            dx = int(random.gauss(0, spread))
+            dy = int(random.gauss(0, spread))
+            x, y = cx + dx, cy + dy
+            if 0 <= x < width and 0 <= y < height:
+                obstacles.add((x, y))
+    return list(obstacles)
 
-start_time = time.time()
-path_d_star = d_star(grid, start, goal)
-d_star_time = time.time() - start_time
+WIDTH = 50
+HEIGHT = 50
 
-start_time = time.time()
-path_wavefront = wavefront(grid, start, goal)
-wavefront_time = time.time() - start_time
+start = (2, 2)
+goal = (WIDTH - 3, HEIGHT - 3)
 
-start_time = time.time()
-path_potential_field = potential_field(grid, start, goal)
-potential_field_time = time.time() - start_time
+obstacles = generate_orthogonal_maze(WIDTH, HEIGHT, start, goal)
+#obstacles = generate_gradient_obstacles(WIDTH, HEIGHT, start, goal)
+#obstacles = generate_obstacle_clusters(WIDTH, HEIGHT)
+grid = Grid(WIDTH, HEIGHT, obstacles)
 
-print("Dijkstra Path:", path_dijkstra)
-print(f"Dijkstra Time: {round(dijkstra_time * 1000, 3)} ms")
+paths = {}
+timings = {}
 
-print("A* Path:", path_a_star)
-print(f"A* Time: {round(a_star_time * 1000, 3)} ms")
+for name, func in {
+    "Dijkstra": dijkstra,
+    "A*": a_star,
+    "D*": d_star,
+    "Wavefront": wavefront,
+    "Potential Field": potential_field
+}.items():
+    start_time = time.time()
+    path = func(grid, start, goal)
+    elapsed = round((time.time() - start_time) * 1000, 3)
+    paths[name] = path
+    timings[name] = elapsed
+    print(f"{name} Time: {elapsed} ms, Path length: {len(path)}")
+    print(path)
 
-print("D* Path:", path_d_star)
-print(f"D* Time: {round(d_star_time * 1000, 3)} ms")
+fig, ax = plt.subplots(figsize=(10, 10))
+grid_matrix = np.zeros((WIDTH, HEIGHT))
+for x, y in obstacles:
+    grid_matrix[x, y] = 1
+ax.imshow(grid_matrix.T, cmap='Greys', origin='lower')
 
-print("Wavefront Path:", path_wavefront)
-print(f"Wavefront Time {round(wavefront_time * 1000, 3)} ms")
+colors = {
+    "Dijkstra": 'blue',
+    "A*": 'green',
+    "D*": 'orange',
+    "Wavefront": 'purple',
+    "Potential Field": 'red'
+}
+for name, path in paths.items():
+    if path:
+        xs, ys = zip(*path)
+        ax.plot(xs, ys, label=f"{name} ({timings[name]} ms)", color=colors[name], linewidth=1)
 
-print("Potential Field Path:", path_potential_field)
-print(f"Potential Field Time: {round(potential_field_time * 1000, 3)} ms")
+ax.plot(*start, 'go')
+ax.plot(*goal, 'ro')
+ax.legend()
+plt.title("Алгоритмы в лабиринтовой среде")
+plt.grid(False)
+plt.show()
